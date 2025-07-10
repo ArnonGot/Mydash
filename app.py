@@ -1,9 +1,3 @@
-#!/usr/bin/env python
-# coding: utf-8
-
-# In[3]:
-
-
 import dash
 from dash import dcc, html
 from dash.dependencies import Input, Output
@@ -231,11 +225,4 @@ def update_graph(selected_branch):
 
 # ✅ Run
 if __name__ == '__main__':
-    app.run(debug=True, port=8052)
-
-
-# In[ ]:
-
-
-
-
+    app.run()
