@@ -14,7 +14,7 @@ def load_sales_data():
     # โหลด
     df = pd.read_csv(csv_url)
 
-    # ✅ เปลี่ยนชื่อคอลัมน์
+    # ✅ เปลี่ยนชื่อคอลัมน์ให้ตรง
     df = df.rename(columns={
         'Timestamp': 'timestamp',
         'สาขาที่ต้องการคีย์ข้อมูล': 'branch',
@@ -26,10 +26,10 @@ def load_sales_data():
         'ชื่อ Supplier / ลูกค้า': 'cust_name'
     })
 
-    # ✅ ทำความสะอาด
+    # ✅ ทำความสะอาดเบื้องต้น
     df = df.dropna(subset=['timestamp', 'trans_type'])
 
-    # ✅ description และ amount_thb
+    # ✅ สร้างคอลัมน์ description และ amount_thb
     df['description'] = df.apply(
         lambda row: row['expense_cat'] if row['trans_type'] == 'รายจ่าย'
                     else row['income_cat'] if row['trans_type'] == 'รายรับ'
@@ -44,6 +44,7 @@ def load_sales_data():
         axis=1
     )
 
+    # ✅ ทำความสะอาดจำนวนเงิน
     for col in ['income_thb', 'expense_thb', 'amount_thb']:
         df[col] = (
             df[col]
@@ -53,18 +54,20 @@ def load_sales_data():
             .fillna(0.0)
         )
 
+    # ✅ แปลง timestamp
     df['timestamp'] = pd.to_datetime(df['timestamp'], dayfirst=True, errors='coerce')
     df['cust_name'] = df['cust_name'].replace('-', np.nan)
     df = df[['timestamp', 'branch', 'trans_type', 'cust_name', 'description', 'amount_thb']].dropna(how='all')
     df['year_month'] = df['timestamp'].dt.to_period('M').astype(str)
 
+    # ✅ แยกยอดขายและต้นทุน
     df['ยอดขาย'] = np.where(df['trans_type'] == 'รายรับ', df['amount_thb'], 0)
     df['ต้นทุน'] = np.where(df['trans_type'] == 'รายจ่าย', df['amount_thb'], 0)
 
+    # ✅ รวมกำไร
     sale_df = df.groupby(['year_month', 'branch'])[['ยอดขาย', 'ต้นทุน']].sum()
     sale_df['กำไร'] = sale_df['ยอดขาย'] - sale_df['ต้นทุน']
     return sale_df.reset_index()
-
 
 # ✅ App setup
 app = dash.Dash(__name__)
@@ -100,15 +103,12 @@ app.layout = html.Div(
             id='summary-container',
             style={
                 'display': 'flex',
-                'flexWrap': 'wrap',
                 'justifyContent': 'space-around',
                 'margin': '20px 0',
-                'gap': '10px',
                 'fontSize': '18px',
                 'fontWeight': 'bold',
                 'fontFamily': 'Noto Sans Thai, Arial, sans-serif',
-                'color': 'white',
-                'textAlign': 'center'
+                'color': 'white'
             }
         ),
 
@@ -124,16 +124,19 @@ app.layout = html.Div(
     [Input('branch-filter', 'value')]
 )
 def update_graph(selected_branch):
+    # Load fresh data each time (for always up-to-date)
     df = load_sales_data()
 
-    # Filter
+    # Filter by branch
     if selected_branch == 'ดาเลเซอร์ (รวมทุกสาขา)':
         filtered_df = df.copy()
     else:
         filtered_df = df[df['branch'] == selected_branch]
 
+    # Monthly summary
     monthly = filtered_df.groupby(['year_month'])[['ยอดขาย', 'ต้นทุน', 'กำไร']].sum().reset_index()
 
+    # Average profit per month
     if selected_branch == 'ดาเลเซอร์ (รวมทุกสาขา)':
         total_profit_all = df['กำไร'].sum()
         total_months = df['year_month'].nunique()
@@ -144,6 +147,7 @@ def update_graph(selected_branch):
         months_branch = branch_data['year_month'].nunique()
         avg_sales_per_month = total_profit_branch / months_branch if months_branch != 0 else 0
 
+    # Summary numbers
     def fmt(x):
         return f"{x:,.0f}"
 
@@ -153,26 +157,10 @@ def update_graph(selected_branch):
     profit_percent = (total_profit / total_sales * 100) if total_sales != 0 else 0
 
     summary_children = [
-        html.Div(
-            [
-                html.Div(label),
-                html.Div(value)
-            ],
-            style={
-                'backgroundColor': '#222',
-                'padding': '10px 20px',
-                'borderRadius': '10px',
-                'flex': '1 1 150px',
-                'minWidth': '120px',
-                'boxSizing': 'border-box'
-            }
-        )
-        for label, value in [
-            ("ยอดขาย", f"{fmt(total_sales)} บาท"),
-            ("ต้นทุน", f"{fmt(total_cost)} บาท"),
-            ("กำไร", f"{fmt(total_profit)} บาท"),
-            ("กำไร (%)", f"{profit_percent:.2f} %"),
-        ]
+        html.Div([html.Div("ยอดขาย"), html.Div(f"{fmt(total_sales)} บาท", style={'color': 'white'})]),
+        html.Div([html.Div("ต้นทุน"), html.Div(f"{fmt(total_cost)} บาท", style={'color': 'red'})]),
+        html.Div([html.Div("กำไร"), html.Div(f"{fmt(total_profit)} บาท", style={'color': 'green'})]),
+        html.Div([html.Div("กำไร (%)"), html.Div(f"{profit_percent:.2f} %", style={'color': 'green'})]),
     ]
 
     # Graph
@@ -229,7 +217,7 @@ def update_graph(selected_branch):
         template='plotly_dark',
         font=dict(family="Noto Sans Thai, Arial, sans-serif", size=14, color="white"),
         legend=dict(title='รายการ', orientation='h', yanchor='bottom', y=1, xanchor='right', x=1),
-        margin=dict(t=40, b=60, l=20, r=20),
+        margin=dict(t=40, b=60, l=60, r=20),
     )
 
     return fig, summary_children
