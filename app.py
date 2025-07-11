@@ -233,8 +233,3 @@ def update_graph(selected_branch):
     )
 
     return fig, summary_children
-
-
-# ✅ Run
-if __name__ == '__main__':
-    app.run()
